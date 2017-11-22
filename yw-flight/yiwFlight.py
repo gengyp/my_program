@@ -37,7 +37,7 @@ class yiwFlight(object):
                     'Upgrade-Insecure-Requests': '1',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.62 Safari/537.36'}
     self.conn = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='apiDB', charset='utf8')
-    # conn = pymysql.connect(host='localhost',user='root',passwd='root',db='scraping',charset='utf8')
+    self.conn1 = pymysql.connect(host='localhost',user='root',passwd='root',db='scraping',charset='utf8')
     self.cursor = self.conn.cursor()
     self.proxies = get_proxies()
 
@@ -106,9 +106,12 @@ class yiwFlight(object):
   
   def randomProxy(self):
     # 生成随机 ip_port
-    proxy_ip = random.choice(self.proxies)
+    cursor = self.conn1.cursor()
+    cursor.execute('select * from yw_proxy')
+    values = cursor.fetchall()
+    proxy_ip = random.choice(values)
     # proxy_ip = '112.123.42.198:2745'
-    proxy = {"http": "http://" + proxy_ip}
+    proxy = {"http": "http://" + proxy_ip[0]}
     return proxy
   
   def spiderHtml(self, name):
