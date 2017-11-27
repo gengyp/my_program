@@ -27,6 +27,7 @@ class yiwFlight(object):
   """docstring for ClassName"""
   
   def __init__(self):
+    self.session = requests.Session()
     self.headers = {'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                     'Accept-Encoding': 'gzip, deflate',
                     'Accept-Language': 'zh-CN,zh;q=0.9',
@@ -37,7 +38,7 @@ class yiwFlight(object):
                     'Upgrade-Insecure-Requests': '1',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.62 Safari/537.36'}
     self.conn = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='apiDB', charset='utf8')
-    self.conn1 = pymysql.connect(host='localhost',user='root',passwd='root',db='scraping',charset='utf8')
+    self.conn1 = pymysql.connect(host='192.168.36.80',user='root',passwd='Temp@1026',db='gyp_test',charset='utf8')
     self.cursor = self.conn.cursor()
     self.proxies = get_proxies()
 
@@ -46,12 +47,12 @@ class yiwFlight(object):
     soup = BeautifulSoup(html, 'lxml')
     trs = soup.select('#tab1 > table > tbody')[0]('tr')
     for tr in trs:
-      row = [time.strftime('%Y-%m-%d', time.localtime(time.time()))]
+      row = [time.strftime('%Y-%m-%d', time.localtime(time.time() - 1.8*3600))]
       if isinstance(tr, bs4.element.Tag):
         for td in tr('td')[:-1]:
           # row.append(td.text.strip())
           row.append(td.text.strip().replace(' ', ''))
-      print(row)
+      # print(row)
       # save2sql(row)
       self.save2sql_new(row)
   
@@ -85,7 +86,7 @@ class yiwFlight(object):
     exists_item = self.cursor.execute(sql)
     
     # 数据变换
-    s = []
+    s = []  # 六个时刻信息
     for t in lst[4:7]:
       if t == '':
         s.extend(['', ''])
@@ -96,8 +97,8 @@ class yiwFlight(object):
     
     # 存在则更新，不存在插入的数据
     if exists_item != 0:
-      sql = 'update ctripfligtinfo set forcastTakeoffTime="{}",forcastLandingTime="{}",realTakeoffTime="{}",realLandingTime="{}", status="{}" where date="{}" and flightNo="{}"'
-      self.cursor.execute(sql.format(s[2], s[3], s[4], s[5], lst[-1], lst[0], lst[1]))
+      sql = 'update ctripfligtinfo set leaveAirport="{}", arriveAirport="{}", forcastTakeoffTime="{}",forcastLandingTime="{}",realTakeoffTime="{}",realLandingTime="{}", status="{}" where date="{}" and flightNo="{}"'
+      self.cursor.execute(sql.format(lst[2], lst[3],s[2], s[3], s[4], s[5], lst[-1], lst[0], lst[1]))
     else:
       # 插入数据
       sql = 'insert into ctripfligtinfo values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}")'
@@ -110,16 +111,33 @@ class yiwFlight(object):
     cursor.execute('select * from yw_proxy')
     values = cursor.fetchall()
     proxy_ip = random.choice(values)
-    # proxy_ip = '112.123.42.198:2745'
-    proxy = {"http": "http://" + proxy_ip[0]}
-    return proxy
-  
+    return proxy_ip[0]
+
+  def save2ip(self, ip):
+    # 检查表中是否存在数据
+    import pymysql
+    conn = pymysql.connect(host='localhost',user='root',passwd='root',db='scraping',charset='utf8')
+    cursor = conn.cursor()
+    
+    sql = 'insert into available_ywproxy values("{}")'.format(ip)
+    cursor.execute(sql)
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
   def spiderHtml(self, name):
     url = "http://flights.ctrip.com/actualtime/" + name + '.p'
-    Flag = True
-    while Flag:
+    flag = True
+    count = 0
+    while flag:
       try:
-        response = requests.get(url + '1/', headers=self.headers, proxies=self.randomProxy())
+        ip_port = self.randomProxy()
+        proxies = {"http": "http://" + ip_port}
+        # print(proxies)
+        if count >= 10:
+          proxies = None
+        response = self.session.get(url + '1/', headers=self.headers, proxies=proxies)
         # response = requests.get(url + '1/', headers=headers)
         print('cur name:', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), name, response.status_code,
               response.url)
@@ -128,11 +146,13 @@ class yiwFlight(object):
         page_num = int(soup.select('#tab1 > div.clearfix > div > div.c_page_list.layoutfix > a')[-1].text)
         for i in range(2, page_num + 1):
           new_url = url + str(i) + '/'
-          response = requests.get(new_url, headers=self.headers, proxies=self.randomProxy())
+          response = self.session.get(new_url, headers=self.headers, proxies=proxies)
           # response = requests.get(new_url, headers=headers)
           self.soup2lst(response.text)
-        Flag = False
+        flag = False
+        self.save2ip(ip_port) 
       except:
+        count += 1
         print('ip request failed !!!!')
         pass
   
@@ -150,16 +170,19 @@ class yiwFlight(object):
           break
       print(j, ipPort)
 
-
 if __name__ == '__main__':
   yw = yiwFlight()
   names = ['arrive-yiw', 'depart-yiw']
-  while True:
+  start = time.time()
+  flag1 = True
+  while flag1:
     for name in names:
       yw.spiderHtml(name)
     cur_hour = time.localtime().tm_hour
-    if cur_hour >= 1:
-      if cur_hour < 6:
+    if cur_hour >= 2 and cur_hour < 6:
         time.sleep(5 * 60 * 60 + 10 * 60)
-      else:
-        time.sleep(60)
+    else:
+      time.sleep(2 * 60)
+    if time.time() - start > 12 * 60:
+      # flag1 = False
+      break
