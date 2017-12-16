@@ -6,16 +6,17 @@
 @software:PyCharm
 @time:2017/7/20 9:42
 
-并行版本
-
+六个时刻点插入本地数据库用于分析网站不同时刻数据差异
+'00:10', '1:10', '7:10', '12:10', '20:10', '23:10'
+结论：当天航班会追踪到凌晨前一分钟，第二天六个小时航班数有递增（39，69，72）
+且过了零点，前一天数据消失
 """
 import requests
 import bs4
 import time
 from bs4 import BeautifulSoup
 import pymysql
-import random
-
+# import random
 
 headers = {'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
            'Accept-Encoding': 'gzip, deflate',
@@ -27,16 +28,8 @@ headers = {'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,imag
            'Upgrade-Insecure-Requests': '1',
            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.62 Safari/537.36'}
 
-conn = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='apiDB', charset='utf8')
-# conn = pymysql.connect(host='localhost',user='root',passwd='root',db='scraping',charset='utf8')
-cursor = conn.cursor()
+# conn = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='apiDB', charset='utf8')
 
-def proxies():
-  # 公司自购代理IP调用接口
-  params = {'num': '200', 'type': '1', 'pro': '', 'city': '0', 'yys': '0', 'port': '11', 'time': '1',
-            'ts': '0', 'ys': '0', 'cs': '0', 'lb': '1', 'sb': '0', 'pb': '4', 'mr': '1', 'regions': ''}
-  response = requests.get('http://webapi.http.zhimacangku.com/getip', params=params).text.strip().split('\r\n')
-  return response
 
 def soup2lst(html):
   # 解析网页逐条存入数据库
@@ -48,28 +41,21 @@ def soup2lst(html):
       for td in tr('td')[:-1]:
         # row.append(td.text.strip())
         row.append(td.text.strip().replace(' ', ''))
-    print(row)
-    # save2sql(row)
-    save2sql_new(row)
-
-
-def randomProxy():
-  # 生成随机 ip_port
-  proxy_ip = random.choice(proxies())
-  # proxy_ip = '112.123.42.198:2745'
-  proxy = {'http': "http://" + proxy_ip}
-  return proxy
-
+    # print(row)
+    save2sql(row)
+    # save2sql_new(row)
 
 def save2sql(lst):
-  # 检查表中是否存在数据
-  sql = 'select * from ctripfligtinfo where date="{}" and flightNo="{}"'.format(lst[0], lst[1])
-  exists_item = cursor.execute(sql)
-  
-  # 删除已存在的数据
-  if exists_item != 0:
-    del_sql = 'delete from ctripfligtinfo where date="{}" and flightNo="{}"'.format(lst[0], lst[1])
-    cursor.execute(del_sql)
+  conn = pymysql.connect(host='localhost', user='root', passwd='root', db='scraping', charset='utf8')
+  cursor = conn.cursor()
+  # # 检查表中是否存在数据
+  # sql = 'select * from ctripfligtinfo where date="{}" and flightNo="{}"'.format(lst[0], lst[1])
+  # exists_item = cursor.execute(sql)
+  #
+  # # 删除已存在的数据
+  # if exists_item != 0:
+  #   del_sql = 'delete from ctripfligtinfo where date="{}" and flightNo="{}"'.format(lst[0], lst[1])
+  #   cursor.execute(del_sql)
   
   # 数据变换
   s = []
@@ -84,44 +70,17 @@ def save2sql(lst):
   sql = 'insert into ctripfligtinfo values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}")'
   cursor.execute(sql.format(lst[0], lst[1], lst[2], lst[3], s[0], s[1], s[2], s[3], s[4], s[5], lst[-1]))
   conn.commit()
-
-
-def save2sql_new(lst):
-  # 检查表中是否存在数据
-  sql = 'select * from ctripfligtinfo where date="{}" and flightNo="{}"'.format(lst[0], lst[1])
-  exists_item = cursor.execute(sql)
-  
-  # 数据变换
-  s = []
-  for t in lst[4:7]:
-    if t == '':
-      s.extend(['', ''])
-    elif '\n\n' in t:
-      s.extend(t.split('\n\n'))
-    else:
-      s.extend([t, ''])
-  
-  # 存在则更新，不存在插入的数据
-  if exists_item != 0:
-    sql = 'update ctripfligtinfo set forcastTakeoffTime="{}",forcastLandingTime="{}",realTakeoffTime="{}",realLandingTime="{}", status="{}" where date="{}" and flightNo="{}"'
-    cursor.execute(sql.format(s[2], s[3], s[4], s[5], lst[-1], lst[0], lst[1]))
-  else:
-    # 插入数据
-    sql = 'insert into ctripfligtinfo values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}")'
-    cursor.execute(sql.format(lst[0], lst[1], lst[2], lst[3], s[0], s[1], s[2], s[3], s[4], s[5], lst[-1]))
-  conn.commit()
-
+  cursor.close()
+  conn.close()
 
 def spiderHtml(name):
-  ip_port = randomProxy()
-  print('Proxy is:', ip_port)
   url = "http://flights.ctrip.com/actualtime/" + name + '.p'
   Flag = True
   while Flag:
     try:
       # response = requests.get(url + '1/', headers=headers, proxies=ip_port)
       response = requests.get(url + '1/', headers=headers)
-      print('cur name:',time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), name, response.status_code, response.url)
+      print('cur name:', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), name, response.status_code, response.url)
       soup2lst(response.text)
       soup = BeautifulSoup(response.text, 'lxml')
       page_num = int(soup.select('#tab1 > div.clearfix > div > div.c_page_list.layoutfix > a')[-1].text)
@@ -133,7 +92,8 @@ def spiderHtml(name):
       Flag = False
     except:
       print('ip request faild !!!!')
-      pass
+      return
+
 
 def testProxyIp(iplist):
   url = 'http://flights.ctrip.com/actualtime'
@@ -152,18 +112,10 @@ def testProxyIp(iplist):
 
 if __name__ == '__main__':
   names = ['arrive-yiw', 'depart-yiw']
+  # save_hour = ['00:10', '1:10', '7:10', '12:10', '20:10', '23:10']
+  save_hour = [0, 23]
   while True:
-    for name in names:
-      spiderHtml(name)
-    cur_hour = time.localtime().tm_hour
-    if cur_hour >= 1:
-      if cur_hour < 6:
-        time.sleep(5 * 60 * 60 + 10 * 60)
-      else:
-        time.sleep(2*60)
-        
-  # a = randomProxy()
-  # print(a)
-  # ips = proxies()
-  # print(ips)
-  # testProxyIp(ips)
+    if time.localtime(time.time() - 10 * 60).tm_hour in save_hour:
+      for name in names:
+        spiderHtml(name)
+    time.sleep(1 * 3600)

@@ -1,0 +1,4 @@
+https://github.com/jaryee/wechat_sogou_crawl
+https://github.com/CoolWell/wechat_spider
+https://github.com/songluyi/crawl_wechat
+https://github.com/bowenpay/wechat-spider

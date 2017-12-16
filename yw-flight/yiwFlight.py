@@ -7,20 +7,13 @@
 @time:2017/7/20 9:42
 
 """
+from __future__ import print_function
 import requests
 import bs4
 import time
 from bs4 import BeautifulSoup
 import pymysql
 import random
-
-
-def get_proxies():
-  # 公司自购代理IP调用接口
-  params = {'num': '200', 'type': '1', 'pro': '', 'city': '0', 'yys': '0', 'port': '11', 'time': '1',
-            'ts': '0', 'ys': '0', 'cs': '0', 'lb': '1', 'sb': '0', 'pb': '4', 'mr': '1', 'regions': ''}
-  response = requests.get('http://webapi.http.zhimacangku.com/getip', params=params).text.strip().split('\r\n')
-  return response
 
 
 class yiwFlight(object):
@@ -38,16 +31,18 @@ class yiwFlight(object):
                     'Upgrade-Insecure-Requests': '1',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.62 Safari/537.36'}
     self.conn = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='apiDB', charset='utf8')
-    self.conn1 = pymysql.connect(host='192.168.36.80',user='root',passwd='Temp@1026',db='gyp_test',charset='utf8')
     self.cursor = self.conn.cursor()
-    self.proxies = get_proxies()
+    self.conn1 = pymysql.connect(host='192.168.36.80', user='root', passwd='Temp@1026', db='gyp_test', charset='utf8')
+    self.cursor1 = self.conn1.cursor()
+    self.proxies = self.get_proxies()
 
   def soup2lst(self, html):
     # 解析网页逐条存入数据库
     soup = BeautifulSoup(html, 'lxml')
     trs = soup.select('#tab1 > table > tbody')[0]('tr')
     for tr in trs:
-      row = [time.strftime('%Y-%m-%d', time.localtime(time.time() - 1.8*3600))]
+      row = [time.strftime('%Y-%m-%d', time.localtime(time.time()))]
+      # row = [time.strftime('%Y-%m-%d', time.localtime(time.time() - 1.8 * 3600))]
       if isinstance(tr, bs4.element.Tag):
         for td in tr('td')[:-1]:
           # row.append(td.text.strip())
@@ -105,13 +100,21 @@ class yiwFlight(object):
       self.cursor.execute(sql.format(lst[0], lst[1], lst[2], lst[3], s[0], s[1], s[2], s[3], s[4], s[5], lst[-1]))
     self.conn.commit()
   
-  def randomProxy(self):
+  def get_proxies(self):
     # 生成随机 ip_port
-    cursor = self.conn1.cursor()
-    cursor.execute('select * from yw_proxy')
-    values = cursor.fetchall()
-    proxy_ip = random.choice(values)
-    return proxy_ip[0]
+    # conn1 = pymysql.connect(host='192.168.36.80',user='root',passwd='Temp@1026',db='gyp_test',charset='utf8')
+    # cursor1 = conn1.cursor()
+    # cursor1.execute('select ip_port from yw_proxy')
+    # values = cursor.fetchall()
+    # # proxy_ip = random.choice(values)
+    # cursor1.close()
+    # conn1.close()
+    # return values
+    
+    self.cursor1.execute('select ip_port from yw_proxy')
+    values = self.cursor1.fetchall()
+    # proxy_ip = random.choice(values)
+    return values
 
   def save2ip(self, ip):
     # 检查表中是否存在数据
@@ -132,28 +135,31 @@ class yiwFlight(object):
     count = 0
     while flag:
       try:
-        ip_port = self.randomProxy()
+        ip_port = random.choice(self.proxies)[0]
         proxies = {"http": "http://" + ip_port}
         # print(proxies)
-        if count >= 10:
+        if count >= 50:
           proxies = None
-        response = self.session.get(url + '1/', headers=self.headers, proxies=proxies)
-        # response = requests.get(url + '1/', headers=headers)
-        print('cur name:', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), name, response.status_code,
+        response = requests.get(url + '1/', headers=self.headers, proxies=proxies,timeout=2)
+        # response = requests.get(url + '1/', headers=self.headers)
+        print('\ncur name:', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), name, response.status_code,
               response.url)
         self.soup2lst(response.text)
         soup = BeautifulSoup(response.text, 'lxml')
         page_num = int(soup.select('#tab1 > div.clearfix > div > div.c_page_list.layoutfix > a')[-1].text)
         for i in range(2, page_num + 1):
           new_url = url + str(i) + '/'
-          response = self.session.get(new_url, headers=self.headers, proxies=proxies)
-          # response = requests.get(new_url, headers=headers)
+          response = requests.get(new_url, headers=self.headers, proxies=proxies,timeout=2)
+          # response = requests.get(new_url, headers=self.headers)
           self.soup2lst(response.text)
         flag = False
-        self.save2ip(ip_port) 
-      except:
+        # self.save2ip(ip_port) 
+      except Exception as e:
+        # print(ip_port)
+        self.cursor1.execute('delete from yw_proxy where ip_port="{}"'.format(ip_port))
+        self.conn1.commit()
         count += 1
-        print('ip request failed !!!!')
+        print('\rip request failed !!!!', count, end='')
         pass
   
   def testProxyIp(self, iplist):
@@ -165,24 +171,36 @@ class yiwFlight(object):
           if r.status_code != 200:
             print('\rtest faild')
             break
-        except:
-          print('requests error')
+        except Exception as e:
+          print('requests error', e)
           break
       print(j, ipPort)
+
+  def closedb(self):
+    self.cursor.close()
+    self.conn.close()
+    self.cursor1.close()
+    self.conn1.close()
+
 
 if __name__ == '__main__':
   yw = yiwFlight()
   names = ['arrive-yiw', 'depart-yiw']
   start = time.time()
   flag1 = True
-  while flag1:
-    for name in names:
-      yw.spiderHtml(name)
-    cur_hour = time.localtime().tm_hour
-    if cur_hour >= 2 and cur_hour < 6:
-        time.sleep(5 * 60 * 60 + 10 * 60)
-    else:
-      time.sleep(2 * 60)
-    if time.time() - start > 12 * 60:
-      # flag1 = False
-      break
+  try:
+    while flag1:
+      for name in names:
+        yw.spiderHtml(name)
+      cur_hour = time.localtime().tm_hour
+      if cur_hour >= 2 and cur_hour < 6:
+          time.sleep(5 * 60 * 60 + 10 * 60)
+      else:
+        time.sleep(2 * 60)
+      if time.time() - start > 12 * 60:
+        # flag1 = False
+        break
+  except Exception as e:
+    print('异常关闭!', e)
+  finally:
+    yw.closedb()
