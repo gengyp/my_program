@@ -26,3 +26,5 @@ def split_num(n):
   print('\n')
 
 split_num(4)
+
+print(raw_path)

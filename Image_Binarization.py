@@ -58,4 +58,4 @@ def test_file(pic_file,new_file='./new_pic/',th=127):
     temp.save(pic_name)
     print('\rcurrent degree is:{},total is:{}'.format(i+1,len(pic_lst)),end='')
 
-test_file('./yanzhengma/',th=150)
+test_file('./yanzhengma/',th=100)
